@@ -1,0 +1,145 @@
+---
+title: "Course Project Practical Machine Learning"
+author: "Ioana Dragomirescu"
+date: "March 19, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+1.	What you should submit: The goal of your project is to predict the manner in which the participants at the study: Weigth Lifting Exercise (http://groupware.les.inf.puc-rio.br/har) did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases. The following libraries will be used:
+library(caret), library(ggplot2), library(rpart),library(rpart.plot),library(RColorBrewer),library(rattle)
+library(RCurl),library(randomForest). For reproducibility purposes we set seed to 3433.
+
+```{r}
+library(knitr)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+
+set.seed(3433)
+```
+The training data for this project are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+The test data are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+The data for this project come from this source: 
+http://groupware.les.inf.puc-rio.br/har. 
+The database description:
+"Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes. Participants were supervised by an experienced weight lifter to make sure the execution complied to the manner they were supposed to simulate. The exercises were performed by six male participants aged between 20-28 years, with little weight lifting experience. We made sure that all participants could easily simulate the mistakes in a safe and controlled manner by using a relatively light dumbbell (1.25kg)."
+```{r}
+#Defining the URL of the training and testing Data
+urlTraining <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+urlTesting <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+# Download training data file
+
+fileTraining <- "pml-training.csv"
+download.file(url=urlTraining, destfile=fileTraining, method="curl")
+
+#Download test file
+
+fileTesting <- "pml-testing.csv"
+download.file(url=urlTesting, destfile=fileTesting, method="curl")
+
+# Import the data 
+
+training <- read.csv(fileTraining, na.strings=c("NA","#DIV/0!",""), header=TRUE)
+
+testing <- read.csv(fileTesting, na.strings=c("NA","#DIV/0!",""), header=TRUE)
+
+```
+
+3.	Partitioning the data into training and testing data: Data are divided into training data (60%) and testing data (40%).
+```{r}
+#Partitioning the data into training and testing data
+
+inTrain <- createDataPartition(y=training$classe, p=0.6, list=FALSE)
+myTraining <- training[inTrain, ]; 
+myTesting <- training[-inTrain, ]
+dim(myTraining); dim(myTesting)
+
+```
+4.	Cleaning the data: raw data- technically correct data- consistent data
+```{r}
+# remove variables with Nearly Zero Variance
+NearZeroV  <- nearZeroVar(myTraining)
+myTraining <- myTraining[, -NearZeroV ]
+myTesting  <- myTesting[, -NearZeroV ]
+dim(myTraining)
+dim(myTesting)
+
+
+
+# remove variables that are mostly NA
+NA_V  <- sapply(myTraining, function(x) mean(is.na(x))) > 0.95
+myTraining <- myTraining[, NA_V==FALSE]
+myTesting  <- myTesting[, NA_V==FALSE]
+dim(myTraining)
+dim(myTesting)
+names(myTraining)
+
+
+# remove identification only variables (columns 1 to 5)
+myTraining <- myTraining[, -(1:5)]
+myTesting  <-myTesting[, -(1:5)]
+dim(myTraining)
+dim(myTesting)
+```
+5. Prediction Model: We apply the random forest and tree decision modeling for our predictions. The trainControl functions regarding the computational nuances of the train function will considered the cross validation method and the number of k-folds is 3.  
+```{r}
+# building the random forest model
+
+Fit1_RF <- train(classe~., trControl=trainControl(method = "cv", number = 3),data = myTraining, method="rf")
+Fit1_RF$finalModel
+
+
+##building the prediction-RF
+predict_RF <- predict(Fit1_RF, newdata=myTesting)
+CF_RF <- confusionMatrix(predict_RF, myTesting$classe)
+CF_RF
+
+
+#building decision tree model
+
+
+Fit2_DT <- train(classe ~ .,  trControl=trainControl(method = "cv", number = 3), data = myTraining, method="rpart")
+Fit2_DT$finalModel
+
+fancyRpartPlot(Fit2_DT$finalModel)
+
+
+
+#building the prediction-Decision Tree
+predict_DT<- predict(Fit2_DT, newdata=myTesting)
+CF_DT <- confusionMatrix(predict_DT, myTesting$classe)
+CF_DT
+```
+We obtained the following accuracy values: 
+-Random Forest : 0.9976
+-Decision Tree :  0.51999
+
+6.	The Random Forest Model applied for the Test Data: Based on the accuracy results, the Random Forest model will be applied to the 20 test cases available in the test data set. 
+  
+```{r}
+predict20 <- predict(Fit1_RF, newdata=testing)
+predict20
+```
+7.	Generate the files for submission 
+  
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(predict20)
+```
